@@ -12,32 +12,16 @@ public enum SecureBytesError: Error {
     case mlockFailed, munlockFailed, outOfBounds, pointerError, custom(String)
 }
 
-open class SecureBytes: Collection {
-
-    private static var initCounter = 0 {
-        didSet {
-            print("#SecBytes = \(initCounter)")
-        }
-    }
-
-
-    public typealias Element = UInt8
-    public typealias Index = Int
-
-    public var startIndex: Index { 0 }
-    public var endIndex: Index { count } // endIndex must be one greater than the last valid index.
-
-    public subscript(position: Int) -> Element { bytes[position] }
-
-    public func index(after i: Int) -> Int { bytes.index(after: i) }
-
+/// SecureBytes provides automatically safe clean-up by leveraging Swift's Automatic-Reference-Counting.
+/// As soon as in instance is not referenced anymore, it's underlying memory is cleaned by being overwritten with 0's.
+/// The underlying memory is mem-locked throughout it's life-cycle to ensure that it never hits the disk.
+/// The cleaning is done using C-libsodium, which guarantees the overwrite is not ignored due to compiler-optimisation flags
+/// SecureBytes wraps a contiguous byte-array to enforce that the immutability of arrays in Swift is overwritten. Hence,
+/// you ensure that no unintentional copies of the array are made on mutatings; it is always the same memory-range that is being modified.
+public class SecureBytes {
     public private(set) var bytes: ContiguousArray<UInt8>
 
-    public var id: Int
-
     public var isOnlyZeros: Bool { bytes.withUnsafeBufferPointer { sodium_is_zero($0.baseAddress, $0.count) == 1 } }
-
-    public var count: Int { bytes.count }
 
     public init<C>(source: C) throws where Element == C.Element, C: Collection {
         self.bytes = try ContiguousArray(unsafeUninitializedCapacity: source.count, initializingWith: { (buffer, initializedCount) in
@@ -50,8 +34,6 @@ open class SecureBytes: Collection {
             // In the latter case, we should subtract one.
             initializedCount = (nextIndex == buffer.startIndex || nextIndex == buffer.endIndex) ? nextIndex : nextIndex - 1
         })
-        Self.initCounter += 1
-        self.id = Self.initCounter
     }
 
     public init(count: Int) throws {
@@ -61,9 +43,6 @@ open class SecureBytes: Collection {
             guard .success == sodium_mlock(pointer, count).exitCode else { throw SecureBytesError.mlockFailed }
             initializedCount = count
         })
-
-        Self.initCounter += 1
-        self.id = Self.initCounter
     }
 
     public init(count: Int, bufferAccessor cb: (UnsafeMutableBufferPointer<UInt8>) -> Void) throws {
@@ -71,9 +50,6 @@ open class SecureBytes: Collection {
             cb(buffer)
             initializedCount = count
         })
-
-        Self.initCounter += 1
-        self.id = Self.initCounter
     }
 
     public init(count: Int, pointerAccessor cb: (UnsafeMutablePointer<UInt8>) -> Void) throws {
@@ -82,9 +58,6 @@ open class SecureBytes: Collection {
             cb(pointer)
             initializedCount = count
         })
-
-        Self.initCounter += 1
-        self.id = Self.initCounter
     }
 
     public func accessBuffer<R>(cb: (UnsafeMutableBufferPointer<UInt8>) -> R) -> R {
@@ -110,11 +83,9 @@ open class SecureBytes: Collection {
             sodium_memzero(pointer, buffer.count)
             guard .success == sodium_munlock(pointer, buffer.count).exitCode else { throw SecureBytesError.munlockFailed }
         }
-
-        print("Deiniting ID = \(self.id)")
-        Self.initCounter -= 1
     }
 
+    /// ArraySlice is an entry into the original array, hence no copy of the underlying memory is made by calling this method
     public func viewBytes(in subrange: Range<Int>) -> ArraySlice<UInt8> {
         precondition(subrange.isSubrange(of: bytes.range), "tried to access too large subrange")
         return bytes[subrange]
@@ -142,16 +113,6 @@ extension SecureBytes: Equatable {
     }
 }
 
-fileprivate extension Range where Bound == Int {
-    func offset(by offset: Int) -> Range<Int> {
-        (offset + startIndex)..<(offset + endIndex)
-    }
-
-    func isSubrange(of other: Range<Int>) -> Bool {
-        self.startIndex >= other.startIndex && self.endIndex <= other.endIndex
-    }
-}
-
 fileprivate extension Collection where Index == Int  {
     var range: Range<Int> { startIndex..<endIndex }
 }
@@ -174,3 +135,19 @@ extension SecureBytes {
     }
 }
 
+extension SecureBytes: ContiguousBytes {
+    public func withUnsafeBytes<R>(_ body: (UnsafeRawBufferPointer) throws -> R) rethrows -> R {
+        try bytes.withUnsafeBytes(body)
+    }
+}
+
+extension SecureBytes: Collection {
+    public typealias Element = UInt8
+    public typealias Index = Int
+    public var startIndex: Index { 0 }
+    public var endIndex: Index { count } // endIndex must be one greater than the last valid index.
+    public subscript(position: Int) -> Element { bytes[position] }
+    public func index(after i: Int) -> Int { bytes.index(after: i) }
+
+    public var count: Int { bytes.count }
+}
