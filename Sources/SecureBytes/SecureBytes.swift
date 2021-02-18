@@ -18,7 +18,7 @@ public enum SecureBytesError: Error {
 /// The cleaning is done using C-libsodium, which guarantees the overwrite is not ignored due to compiler-optimisation flags
 /// SecureBytes wraps a contiguous byte-array to enforce that the immutability of arrays in Swift is overwritten. Hence,
 /// you ensure that no unintentional copies of the array are made on mutatings; it is always the same memory-range that is being modified.
-public class SecureBytes {
+open class SecureBytes {
     public private(set) var bytes: ContiguousArray<UInt8>
 
     public var isOnlyZeros: Bool { bytes.withUnsafeBufferPointer { sodium_is_zero($0.baseAddress, $0.count) == 1 } }
