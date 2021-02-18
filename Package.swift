@@ -13,9 +13,9 @@ let package = Package(
     dependencies: [
         // Dependencies declare other packages that this package depends on.
         // .package(url: /* package url */, from: "1.0.0"),
+        .package(name: "Clibsodium", url: "https://github.com/JakobOffersen/Clibsodium-wrapper.git", .branch("main"))
     ],
     targets: [
-        .binaryTarget(name: "Clibsodium", path: "Clibsodium.xcframework"),
         .target(
             name: "SecureBytes",
             dependencies: ["Clibsodium"]),
